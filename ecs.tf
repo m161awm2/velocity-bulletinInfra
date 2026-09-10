@@ -39,6 +39,15 @@ resource "aws_ecs_task_definition" "backend" {
       portMappings = [
         { containerPort = var.container_port, protocol = "tcp" }
       ]
+      # Non-secret config. APP_ENV switches the app out of its
+      # `development` default (see config.Load); S3_BUCKET turns on the
+      # upload feature (UploadsEnabled() just checks this is non-empty) -
+      # both were silently missing from the first hand-built task
+      # definition, so the app ran in dev mode with uploads disabled.
+      environment = [
+        { name = "APP_ENV", value = "production" },
+        { name = "S3_BUCKET", value = aws_s3_bucket.media.bucket }
+      ]
       secrets = [
         {
           name      = "DATABASE_URL"

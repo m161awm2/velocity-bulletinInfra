@@ -78,6 +78,15 @@ Velocity Bulletin의 AWS 인프라 설계와 운영 기준을 정의합니다.
 
 여기까지가 "백엔드는 어느 정도 완성"된 상태였고, 14번 CloudFront 연결 단계에서 위 "실제로 있었던 일: 인터널 ALB + CloudFront VPC Origin" 절에 적은 문제가 발생했습니다.
 
+### 나중에 발견한 것: 비-시크릿 환경변수 누락
+
+7번에서 `DATABASE_URL`, `JWT_SECRET`은 Secrets Manager `valueFrom`으로 넣었지만, 그 둘 말고 일반(평문) `environment` 항목은 태스크 정의에 하나도 없었습니다. 그 결과:
+
+- `APP_ENV`가 없어서 앱이 기본값인 `development`로 떠서 Gin이 debug 모드로 실행됨
+- `S3_BUCKET`이 없어서 `UploadsEnabled()`가 `false`가 되어 5번에서 만든 미디어 버킷/IAM 권한이 있는데도 업로드 기능이 꺼져 있었음
+
+`/health/ready`가 Neon DB에 실제로 ping하는 핸들러라 200이 계속 떠서 DB 연결 자체는 정상이었지만, 이 두 값은 별개로 빠져 있었던 것 — 태스크 정의에 `environment`로 `APP_ENV=production`, `S3_BUCKET=velocity-media-608420805531`를 추가한 새 리비전을 배포해서 해결했습니다. `S3_PUBLIC_BASE_URL`은 아직 미디어를 공개로 서빙할 CloudFront 배포/OAC가 없어서 의도적으로 비워뒀습니다 (지금 값을 넣어도 실제로 접근 가능한 URL이 아님).
+
 ## Terraform
 
 루트에 있는 `.tf` 파일들이 위 "구축 순서" 1~14번(마이그레이션 실행 제외 — 아래 참고)을 코드화한 것입니다.
