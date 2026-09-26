@@ -1,3 +1,6 @@
+# 이전 internal ALB 구성에서의 전환 기록
+
+현재 Terraform은 아래 public ALB + Custom Origin 구성을 반영합니다. 아래 내용은 당시 콘솔 작업 기록입니다.
 
 참고로 "구축 순서"는 이 설계(인터널 ALB + CloudFront VPC Origin) 그대로 실제 콘솔에서 끝까지 진행했던 기록입니다. VPC Origin 리소스(`velocity-api-origin`) 생성까지는 문제없이 됐지만, **이 VPC Origin을 실제 CloudFront 배포의 오리진으로 연결(association)하는 단계에서 막혔습니다** — 사용 중인 CloudFront 배포가 Free 플랜이었고, Free 플랜에서는 VPC Origin을 오리진으로 붙일 수 없다는 오류가 발생했습니다.
 
@@ -12,4 +15,4 @@
 
 즉 최종적으로 배포된 구조는 internal ALB가 아니라 **public ALB + Custom Origin**입니다. internal ALB(`velocity-internal-alb`)와 미사용 VPC Origin(`velocity-api-origin`)은 당장 지우지 않고 새 경로가 안정적으로 동작하는지 확인한 뒤 정리하기로 했습니다.
 
-이 저장소의 Terraform 코드(아래 "Terraform" 절)는 **원래 설계(인터널 ALB + VPC Origin)를 그대로 코드화한 것**입니다 — 실제로 막혔던 지점까지 포함해서 일부러 그대로 남겨뒀습니다. CloudFront 플랜이 VPC Origin을 지원하는 계정에서는 이 코드가 그대로 동작해야 합니다. Free 플랜을 유지해야 하는 경우 `aws_cloudfront_vpc_origin`과 관련 오리진/behavior를 위 public ALB 방식으로 바꿔야 합니다.
+현재 Terraform에서는 VPC Origin과 관리형 SG 입력을 제거하고 public ALB, 별도 public 타겟 그룹, CloudFront Custom Origin으로 반영했습니다. 기존 리소스 전환과 import 유의사항은 README를 참고하세요.

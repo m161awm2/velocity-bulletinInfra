@@ -9,7 +9,7 @@ Velocity Bulletin의 AWS 인프라 설계와 운영 기준을 정의합니다.
 ## 목표
 
 - 서울 리전(`ap-northeast-2`)의 2개 가용 영역에 운영 워크로드를 분산합니다.
-- 프런트엔드, API, 사용자 업로드 파일의 origin을 외부에 직접 노출하지 않습니다.
+- S3 버킷과 ECS 태스크는 비공개로 유지하고, 퍼블릭 ALB는 CloudFront origin-facing 주소에서만 접근하도록 제한합니다.
 - 사람은 AWS IAM Identity Center(SSO), CI/CD는 GitHub OIDC, 워크로드는 IAM Role로 인증합니다.
 - 단일 AZ 장애 시 서비스를 계속 제공할 수 있어야 합니다.
 - 월 AWS 비용은 Neon 비용과 세금을 제외하고 약 20만~25만 원을 초기 운영 범위로 봅니다.
@@ -17,20 +17,32 @@ Velocity Bulletin의 AWS 인프라 설계와 운영 기준을 정의합니다.
 
 ## 다이어그램
 
-![다이어그램이미지](./diagram.png)
+```mermaid
+flowchart LR
+  User[사용자] --> CF[CloudFront HTTPS]
+  CF -->|기본 경로 / OAC| S3[Private frontend S3]
+  CF -->|/api/* HTTP 80| ALB[Public ALB / Public A·C]
+  ALB -->|8080 / ALB SG만 허용| ECS[ECS Fargate / Private App A·C]
+  ECS --> NAT[AZ별 NAT Gateway]
+  NAT --> Neon[Neon PostgreSQL]
+```
+
+기존 `diagram.png`는 이전 internal ALB 설계의 기록입니다.
 
 - VPC `10.20.0.0/16`, 2개 AZ, 각 AZ에 Public / Private App 서브넷.
-- Public 서브넷은 NAT Gateway 전용이며 워크로드를 두지 않습니다.
+- Public 서브넷에는 internet-facing ALB와 NAT Gateway를 배치합니다.
 - ECS Fargate 백엔드는 Private App 서브넷 2곳에 분산되고 Public IP가 없습니다.
-- `/*` 요청은 CloudFront → private frontend S3(OAC)로, `/api/*` 요청은 캐시 없이 CloudFront → internal ALB로 전달됩니다.
-- internal ALB는 외부에서 직접 접근할 수 없고, CloudFront VPC Origin을 통해서만 도달합니다.
+- `/*` 요청은 CloudFront → private frontend S3(OAC)로, `/api/*` 요청은 캐시 없이 CloudFront → public ALB Custom Origin으로 전달됩니다.
+- ALB SG는 AWS 관리형 prefix list `com.amazonaws.global.cloudfront.origin-facing`의 TCP 80만 허용합니다. ECS SG는 ALB SG에서 오는 앱 포트만 허용합니다.
+- 이 prefix list는 모든 CloudFront 배포가 공유합니다. 특정 배포만 인증하는 기능은 아닙니다.
+- 사용자 → CloudFront는 HTTPS이며, CloudFront → ALB는 현재 HTTP입니다. ALB HTTPS를 도입하려면 별도 도메인과 해당 리전 ACM 인증서가 필요합니다.
 
 ## 트러블슈팅
 [이동하기](./Troubleshootings.md)
 
 ## 구축 순서
 
-실제로 AWS 콘솔에서 이 순서대로 만들었습니다. Terraform 파일들은 이 순서를 그대로 코드로 옮긴 것입니다.
+현재 퍼블릭 ALB 구성의 권장 순서입니다. 클러스터와 태스크 정의는 서로 독립적으로 생성할 수 있습니다.
 
 1. **네트워크**: VPC `10.20.0.0/16`, 서브넷 4개(Public A/C `10.20.1.0/24` `10.20.2.0/24`, Private App A/C `10.20.11.0/24` `10.20.12.0/24`), IGW와 NAT Gateway를 라우팅 테이블에 연결.
 2. **ECS 클러스터**(Fargate) 생성.
@@ -51,18 +63,16 @@ Velocity Bulletin의 AWS 인프라 설계와 운영 기준을 정의합니다.
 7. **ECS 태스크 정의**: 환경변수 2개를 값유형 `ValueFrom`으로 지정
    - `DATABASE_URL` → `arn:...:secret:velocitySecretManager-wBaiFO:DATABASE_URL::`
    - `JWT_SECRET` → `arn:...:secret:velocitySecretManager-wBaiFO:JWT_SECRET::`
-8. **마이그레이션용 Secret**을 하나 더 생성 — Neon의 커넥션 풀링을 끈(unpooled/direct) URL. 마이그레이션 태스크는 여러 요청이 커넥션을 나눠 쓸 필요가 없으므로 풀링이 필요 없습니다.
+8. **마이그레이션용 Secret**을 하나 더 생성 — Neon의 커넥션 풀링을 끈(unpooled/direct) URL. 앱용 `DATABASE_URL`은 pooled 주소, 마이그레이션용 `MIGRATION_DATABASE_URL`은 direct 주소로 분리합니다.
 9. **마이그레이션 실행**: ECS 클러스터에서 프라이빗 서브넷 1개에 일회성 태스크 실행, 컨테이너 재정의로 `/app/migrate -action up` 실행. 로그에 `migration complete`가 뜨면 종료.
 10. **타겟 그룹**: target type `ip`, health check path `/health/ready`.
 11. **보안 그룹 2개**
-    - ALB SG: 만들기만 하고 규칙은 나중에(9번 CloudFront VPC Origin 생성 이후) 추가
+    - ALB SG: CloudFront origin-facing prefix list에서 오는 TCP `80`만 허용
     - Task SG: 인바운드 TCP `8080`, 소스는 ALB SG
-12. **internal ALB** 생성 — internal, 두 가용영역의 Private App 서브넷, 위 타겟 그룹 대상.
+12. **public ALB** 생성 — internet-facing, 두 가용영역의 Public 서브넷, 위 타겟 그룹 대상.
 13. **ECS 서비스** 생성 — 태스크 2개 유지, Private 서브넷 2곳, Public IP 끔, Task SG 적용, 타겟 그룹에 자동 등록. 이 시점에 타겟 그룹에 healthy 타겟 2개가 뜹니다.
-14. **CloudFront VPC Origin**: ALB SG 인바운드에 `com.amazonaws.global.cloudfront.origin-facing` prefix list로 80 포트 허용 → CloudFront에서 VPC Origin(`velocity-api-origin`, 프로토콜 HTTP-only, 대상 internal ALB ARN) 생성 → 배포되면 AWS가 자동으로 만드는 관리형 보안 그룹을 internal ALB SG의 인바운드 허용 목록에 추가.
+14. **CloudFront**: `/api/*`를 public ALB DNS의 일반 Custom Origin(HTTP:80)에 연결. API 캐시는 비활성화하고 `AllViewerExceptHostHeader`로 Authorization을 포함한 요청 헤더를 전달.
 15. **프런트엔드**: 정적 사이트용 S3 버킷 생성, `npm ci && npm run build`로 빌드한 정적 파일을 버킷에 업로드.
-
-여기까지가 "백엔드는 어느 정도 완성"된 상태였고, 14번 CloudFront 연결 단계에서 위 "실제로 있었던 일: 인터널 ALB + CloudFront VPC Origin" 절에 적은 문제가 발생했습니다.
 
 ### 나중에 발견한 것: 비-시크릿 환경변수 누락
 
@@ -84,20 +94,20 @@ Velocity Bulletin의 AWS 인프라 설계와 운영 기준을 정의합니다.
 | `iam.tf` | `velocity-task-execution-role`, `velocity-task-role`과 각각의 정책 |
 | `s3.tf` | 미디어 버킷, 프런트엔드 버킷(OAC 전용) |
 | `secrets.tf` | 앱 런타임 Secret(`DATABASE_URL`, `JWT_SECRET`), 마이그레이션 Secret |
-| `alb.tf` | ALB SG, Task SG, 타겟 그룹, internal ALB, 리스너 |
+| `alb.tf` | ALB SG, Task SG, 타겟 그룹, public ALB, HTTP 리스너 |
 | `ecs.tf` | ECS 클러스터, 백엔드 태스크 정의, 마이그레이션 태스크 정의, ECS 서비스 |
-| `cloudfront.tf` | OAC, CloudFront VPC Origin, origin request policy, 배포(default `/*` + `/api/*` behavior) |
+| `cloudfront.tf` | OAC, ALB Custom Origin, 관리형 origin request policy, 배포(default `/*` + `/api/*` behavior) |
 | `outputs.tf` | ALB DNS, CloudFront 도메인, ECR URL 등 |
 
-### 알려진 부트스트랩 순서 문제
+### 기존 구성에서 전환할 때
 
-`alb.tf`의 ALB 보안 그룹 인바운드 규칙은 CloudFront VPC Origin이 배포에 연결된 **이후에** AWS가 자동 생성하는 관리형 보안 그룹 ID가 있어야 만들 수 있습니다. 콘솔에서 겪은 것과 같은 순서 문제이므로 2단계로 적용합니다.
+VPC Origin 및 관리형 SG ID를 조회하는 2단계 apply는 더 이상 필요하지 않습니다. `cloudfront_vpc_origin_managed_sg_id` 변수와 `cloudfront_vpc_origin_id` 출력은 제거했고, ALB 출력은 `public_alb_dns_name`으로 변경했습니다.
 
-```bash
-terraform apply                                        # 1단계: 이 규칙만 빼고 전부 생성
-# AWS 콘솔 또는 aws ec2 describe-security-groups 로 VPC Origin 관리형 SG ID 확인
-terraform apply -var="cloudfront_vpc_origin_managed_sg_id=sg-xxxxxxxxxxxxxxxxx"  # 2단계
-```
+기존 Terraform state가 있다면 `moved.tf`가 ALB와 리스너의 주소 변경을 연결합니다. ALB는 internal → internet-facing 변경으로 교체되고, 타겟 그룹도 새 이름으로 교체됩니다. 두 ALB가 하나의 타겟 그룹을 공유하지 않도록 새 타겟 그룹을 먼저 생성합니다. 이 변경은 무중단 전환을 보장하지 않으므로 실제 plan과 배포 시점을 검토하세요.
+
+콘솔에서 만든 리소스는 자동으로 Terraform 관리에 편입되지 않습니다. 기존 리소스를 재사용하려면 apply 전에 import와 plan 확인이 필요합니다.
+
+CloudFront prefix list의 보안 그룹 규칙 가중치는 55이므로 ALB SG의 추가 인바운드 규칙을 만들 때 할당량을 확인하세요.
 
 ### 마이그레이션 태스크
 
@@ -126,3 +136,18 @@ terraform apply -var-file=terraform.tfvars
 `backend_image`는 로컬에서 채우거나, CI에서 `-var="backend_image=<ecr_repo_url>:<git-sha>"`로 매 배포마다 넘깁니다.
 
 시크릿(`database_url`, `migration_database_url`)은 `terraform.tfvars`(gitignore 처리됨), `TF_VAR_*` 환경변수, 또는 CI의 `-var`로만 주입하고 저장소에는 절대 커밋하지 않습니다.
+
+### 검증과 운영 범위
+
+```bash
+terraform fmt -check
+terraform init -backend=false
+terraform validate
+terraform test
+```
+
+테스트는 mock provider로 네트워크 배치와 API 라우팅 계약을 확인하며 AWS 리소스를 생성하지 않습니다. 실제 AWS plan/apply 및 HTTP·DB 연결 검증은 별도로 필요합니다.
+
+Secrets Manager 값은 sensitive 변수여도 Terraform state에 저장됩니다. state를 저장소에 커밋하지 말고 접근을 제한하세요.
+
+현재 미디어 읽기용 CloudFront OAC는 아직 구성되지 않았습니다. 기존 전역 SPA 오류 응답 설정은 API 403/404도 `index.html`의 200으로 바꿀 수 있어, 운영 전 프런트엔드 라우팅과 함께 별도로 정리해야 합니다.

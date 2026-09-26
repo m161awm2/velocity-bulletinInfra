@@ -23,13 +23,13 @@ variable "vpc_cidr" {
 }
 
 variable "public_subnet_cidrs" {
-  description = "Public subnet CIDRs, one per AZ (NAT Gateway only, no inbound internet routes to workloads)."
+  description = "Public subnet CIDRs, one per AZ (internet-facing ALB and NAT Gateway)."
   type        = list(string)
   default     = ["10.20.1.0/24", "10.20.2.0/24"]
 }
 
 variable "private_app_subnet_cidrs" {
-  description = "Private application subnet CIDRs, one per AZ (ECS tasks, internal ALB, CloudFront VPC Origin ENIs)."
+  description = "Private application subnet CIDRs, one per AZ (ECS tasks without public IPs)."
   type        = list(string)
   default     = ["10.20.11.0/24", "10.20.12.0/24"]
 }
@@ -59,17 +59,6 @@ variable "ecs_task_memory" {
 variable "ecs_desired_count" {
   type    = number
   default = 2
-}
-
-variable "cloudfront_vpc_origin_managed_sg_id" {
-  description = <<-EOT
-    Security group ID that AWS auto-creates for the CloudFront VPC Origin
-    once it's associated with a distribution. Unknown (and unsettable)
-    on a from-scratch apply - leave null for the first apply, then fill
-    it in and re-apply. See alb.tf for the full sequence.
-  EOT
-  type        = string
-  default     = null
 }
 
 variable "backend_image" {
