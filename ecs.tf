@@ -150,5 +150,5 @@ resource "aws_ecs_service" "backend" {
     container_port   = var.container_port
   }
 
-  depends_on = [aws_lb_listener.internal_http]
+  depends_on = [aws_lb_listener.public_http]
 }

@@ -1,5 +1,3 @@
-# CloudFront resources (distribution, VPC Origin, OAC, WAF) are global and
-# must be created via the us-east-1 endpoint regardless of workload region.
 provider "aws" {
   region = var.aws_region
 

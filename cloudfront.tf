@@ -1,37 +1,9 @@
-# Single CloudFront distribution, two origins:
-#   default `/*`   -> private frontend S3 (OAC)
-#   `/api/*`       -> internal ALB, reached through a CloudFront VPC Origin
-#                     (no public ALB, no VPC Origin managed SG exposed to
-#                     the internet - see alb.tf for the SG chain)
-#
-# IMPORTANT: as of writing, VPC Origins are not available on every
-# CloudFront plan tier. If `aws_cloudfront_vpc_origin` fails to associate
-# with the distribution with a plan/tier error, this whole file is the
-# thing that doesn't work - see README "실제로 있었던 일" for what we did
-# instead (a public-facing ALB + plain custom origin, kept out of this
-# design on purpose so this file stays a faithful record of the
-# internal-ALB plan).
-
+# Frontend S3 (OAC) and public ALB custom origin share one distribution.
 resource "aws_cloudfront_origin_access_control" "frontend" {
   name                              = "${var.project}-frontend-oac"
   origin_access_control_origin_type = "s3"
   signing_behavior                  = "always"
   signing_protocol                  = "sigv4"
-}
-
-resource "aws_cloudfront_vpc_origin" "api" {
-  vpc_origin_endpoint_config {
-    name                   = "${var.project}-api-origin"
-    arn                    = aws_lb.internal.arn
-    http_port              = 80
-    https_port             = 443
-    origin_protocol_policy = "http-only"
-
-    origin_ssl_protocols {
-      items    = ["TLSv1.2"]
-      quantity = 1
-    }
-  }
 }
 
 data "aws_cloudfront_cache_policy" "caching_disabled" {
@@ -42,28 +14,10 @@ data "aws_cloudfront_cache_policy" "caching_optimized" {
   name = "Managed-CachingOptimized"
 }
 
-# Forwards Authorization + the small set of headers the API actually
-# reads, plus every query string. Never enable caching on a behavior
-# that forwards Authorization to the origin while keying the cache on
-# something narrower - that's how one user's authenticated response
-# gets served back to another user.
-resource "aws_cloudfront_origin_request_policy" "api" {
-  name = "${var.project}-api-origin-request"
-
-  cookies_config {
-    cookie_behavior = "none"
-  }
-
-  headers_config {
-    header_behavior = "whitelist"
-    headers {
-      items = ["Authorization", "Content-Type", "Origin", "Accept", "X-Request-ID"]
-    }
-  }
-
-  query_strings_config {
-    query_string_behavior = "all"
-  }
+# Authorization cannot be individually allowlisted in an origin request policy.
+# Forward viewer headers (except Host) with API caching disabled.
+data "aws_cloudfront_origin_request_policy" "api" {
+  name = "Managed-AllViewerExceptHostHeader"
 }
 
 resource "aws_cloudfront_distribution" "app" {
@@ -80,10 +34,13 @@ resource "aws_cloudfront_distribution" "app" {
   }
 
   origin {
-    origin_id   = "internal-alb"
-    domain_name = aws_lb.internal.dns_name
-    vpc_origin_config {
-      vpc_origin_id = aws_cloudfront_vpc_origin.api.id
+    origin_id   = "public-alb"
+    domain_name = aws_lb.public.dns_name
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "http-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
     }
   }
 
@@ -98,13 +55,13 @@ resource "aws_cloudfront_distribution" "app" {
 
   ordered_cache_behavior {
     path_pattern             = "/api/*"
-    target_origin_id         = "internal-alb"
+    target_origin_id         = "public-alb"
     viewer_protocol_policy   = "redirect-to-https"
     allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
     cached_methods           = ["GET", "HEAD"]
     compress                 = true
     cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
-    origin_request_policy_id = aws_cloudfront_origin_request_policy.api.id
+    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.api.id
   }
 
   custom_error_response {

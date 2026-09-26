@@ -1,6 +1,6 @@
 # VPC: 10.20.0.0/16 across 2 AZs.
-#   Public_A / Public_C      -> NAT Gateway only, no workloads.
-#   Private_App_A / Private_App_C -> ECS tasks, internal ALB, CloudFront VPC Origin ENIs.
+#   Public_A / Public_C      -> internet-facing ALB and NAT Gateway.
+#   Private_App_A / Private_App_C -> ECS tasks without public IPs.
 #
 # Each private subnet routes 0.0.0.0/0 through the NAT Gateway *in the same AZ*.
 # This is deliberate: a per-AZ NAT Gateway avoids cross-AZ data-processing
