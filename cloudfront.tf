@@ -14,10 +14,9 @@ data "aws_cloudfront_cache_policy" "caching_optimized" {
   name = "Managed-CachingOptimized"
 }
 
-# Authorization cannot be individually allowlisted in an origin request policy.
-# Forward viewer headers (except Host) with API caching disabled.
+# Match the console behavior: forward all viewer request values to the ALB.
 data "aws_cloudfront_origin_request_policy" "api" {
-  name = "Managed-AllViewerExceptHostHeader"
+  name = "Managed-AllViewer"
 }
 
 resource "aws_cloudfront_distribution" "app" {
@@ -62,20 +61,6 @@ resource "aws_cloudfront_distribution" "app" {
     compress                 = true
     cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
     origin_request_policy_id = data.aws_cloudfront_origin_request_policy.api.id
-  }
-
-  custom_error_response {
-    error_code            = 403
-    response_code         = 200
-    response_page_path    = "/index.html"
-    error_caching_min_ttl = 0
-  }
-
-  custom_error_response {
-    error_code            = 404
-    response_code         = 200
-    response_page_path    = "/index.html"
-    error_caching_min_ttl = 0
   }
 
   restrictions {

@@ -2,10 +2,8 @@
 #   Public_A / Public_C      -> internet-facing ALB and NAT Gateway.
 #   Private_App_A / Private_App_C -> ECS tasks without public IPs.
 #
-# Each private subnet routes 0.0.0.0/0 through the NAT Gateway *in the same AZ*.
-# This is deliberate: a per-AZ NAT Gateway avoids cross-AZ data-processing
-# charges and means a single NAT/AZ failure only affects that AZ's tasks,
-# not the whole service (see README "단일 AZ 장애" goal).
+# The console-built architecture uses one NAT Gateway and one private route
+# table shared by both application subnets.
 
 resource "aws_vpc" "main" {
   cidr_block           = var.vpc_cidr
@@ -40,16 +38,16 @@ resource "aws_subnet" "private_app" {
 }
 
 resource "aws_eip" "nat" {
-  count  = length(var.azs)
+  count  = 1
   domain = "vpc"
-  tags   = { Name = "${var.project}-nat-eip-${substr(var.azs[count.index], -1, 1)}" }
+  tags   = { Name = "${var.project}-nat-eip-${substr(var.azs[0], -1, 1)}" }
 }
 
 resource "aws_nat_gateway" "main" {
-  count         = length(var.azs)
-  allocation_id = aws_eip.nat[count.index].id
-  subnet_id     = aws_subnet.public[count.index].id
-  tags          = { Name = "${var.project}-nat-${substr(var.azs[count.index], -1, 1)}" }
+  count         = 1
+  allocation_id = aws_eip.nat[0].id
+  subnet_id     = aws_subnet.public[0].id
+  tags          = { Name = "${var.project}-nat-${substr(var.azs[0], -1, 1)}" }
 
   depends_on = [aws_internet_gateway.main]
 }
@@ -72,22 +70,21 @@ resource "aws_route_table_association" "public" {
 }
 
 resource "aws_route_table" "private_app" {
-  count  = length(var.azs)
+  count  = 1
   vpc_id = aws_vpc.main.id
-  tags   = { Name = "${var.project}-private-app-rt-${substr(var.azs[count.index], -1, 1)}" }
+  tags   = { Name = "${var.project}-private-app-rt-${substr(var.azs[0], -1, 1)}" }
 }
 
 resource "aws_route" "private_app_nat" {
-  count                  = length(var.azs)
-  route_table_id         = aws_route_table.private_app[count.index].id
+  route_table_id         = aws_route_table.private_app[0].id
   destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id         = aws_nat_gateway.main[count.index].id
+  nat_gateway_id         = aws_nat_gateway.main[0].id
 }
 
 resource "aws_route_table_association" "private_app" {
   count          = length(var.azs)
   subnet_id      = aws_subnet.private_app[count.index].id
-  route_table_id = aws_route_table.private_app[count.index].id
+  route_table_id = aws_route_table.private_app[0].id
 }
 
 # S3 Gateway Endpoint: keeps ECR image-layer (backed by S3) and S3 API

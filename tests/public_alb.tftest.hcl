@@ -43,6 +43,14 @@ run "public_alb_private_tasks" {
   command = apply
 
   assert {
+    condition     = length(aws_nat_gateway.main) == 1 && aws_nat_gateway.main[0].subnet_id == aws_subnet.public[0].id
+    error_message = "The console-built network uses one NAT Gateway in the first public subnet."
+  }
+  assert {
+    condition     = length(aws_route_table.private_app) == 1 && alltrue([for association in aws_route_table_association.private_app : association.route_table_id == aws_route_table.private_app[0].id])
+    error_message = "Both private application subnets must use the shared private route table."
+  }
+  assert {
     condition     = aws_lb.public.internal == false && aws_lb.public.subnets == toset(aws_subnet.public[*].id)
     error_message = "The internet-facing ALB must use the public subnets."
   }
@@ -65,5 +73,9 @@ run "public_alb_private_tasks" {
   assert {
     condition     = aws_cloudfront_distribution.app.ordered_cache_behavior[0].target_origin_id == "public-alb" && aws_cloudfront_distribution.app.ordered_cache_behavior[0].cache_policy_id == data.aws_cloudfront_cache_policy.caching_disabled.id && aws_cloudfront_distribution.app.ordered_cache_behavior[0].origin_request_policy_id == data.aws_cloudfront_origin_request_policy.api.id
     error_message = "API traffic must use the public ALB with caching disabled and Authorization forwarding."
+  }
+  assert {
+    condition     = data.aws_cloudfront_origin_request_policy.api.name == "Managed-AllViewer"
+    error_message = "The API behavior must forward the viewer request settings selected in CloudFront."
   }
 }
