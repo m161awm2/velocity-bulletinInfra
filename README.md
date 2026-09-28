@@ -9,6 +9,8 @@
 - 두 AZ의 프라이빗 서브넷은 NAT Gateway 하나와 공용 라우팅 테이블을 사용합니다.
 - DB 연결 정보는 Secrets Manager에서 주입합니다. 애플리케이션 태스크 역할에는 별도 AWS 권한을 주지 않습니다.
 - WAF는 별도 비용 때문에 포함하지 않았습니다.
+### 다이어그램
+![다이어그램](./diagram.png)
 
 ## 실행
 
@@ -21,4 +23,4 @@ terraform plan -var-file=terraform.tfvars
 terraform apply -var-file=terraform.tfvars
 ```
 
-실제 배포 전 ECS에서 일회성 마이그레이션 태스크를 실행합니다. 이미 콘솔에서 만든 리소스는 Terraform에 자동으로 편입되지 않으므로, 기존 AWS 환경에 적용하기 전 import와 plan을 확인합니다. Terraform state도 저장소에 커밋하지 않습니다.
+실제 배포 전 ECS에서 일회성 마이그레이션 태스크를 실행합니다.
