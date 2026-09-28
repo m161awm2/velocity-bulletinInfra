@@ -74,14 +74,11 @@ flowchart LR
 14. **CloudFront**: `/api/*`를 public ALB DNS의 일반 Custom Origin(HTTP:80)에 연결. API 캐시는 비활성화하고 `AllViewerExceptHostHeader`로 Authorization을 포함한 요청 헤더를 전달.
 15. **프런트엔드**: 정적 사이트용 S3 버킷 생성, `npm ci && npm run build`로 빌드한 정적 파일을 버킷에 업로드.
 
-### 나중에 발견한 것: 비-시크릿 환경변수 누락
+### 업로드용 환경변수
 
-7번에서 `DATABASE_URL`, `JWT_SECRET`은 Secrets Manager `valueFrom`으로 넣었지만, 그 둘 말고 일반(평문) `environment` 항목은 태스크 정의에 하나도 없었습니다. 그 결과:
+`DATABASE_URL`, `JWT_SECRET`은 Secrets Manager `valueFrom`으로 주입합니다. 파일 업로드를 사용하려면 일반 `environment` 항목에 `S3_BUCKET`도 지정해야 합니다. 이 값이 비어 있으면 `UploadsEnabled()`가 `false`이므로 버킷과 IAM 권한이 있어도 업로드 기능은 꺼집니다.
 
-- `APP_ENV`가 없어서 앱이 기본값인 `development`로 떠서 Gin이 debug 모드로 실행됨
-- `S3_BUCKET`이 없어서 `UploadsEnabled()`가 `false`가 되어 5번에서 만든 미디어 버킷/IAM 권한이 있는데도 업로드 기능이 꺼져 있었음
-
-`/health/ready`가 Neon DB에 실제로 ping하는 핸들러라 200이 계속 떠서 DB 연결 자체는 정상이었지만, 이 두 값은 별개로 빠져 있었던 것 — 태스크 정의에 `environment`로 `APP_ENV=production`, `S3_BUCKET=velocity-media-608420805531`를 추가한 새 리비전을 배포해서 해결했습니다. `S3_PUBLIC_BASE_URL`은 아직 미디어를 공개로 서빙할 CloudFront 배포/OAC가 없어서 의도적으로 비워뒀습니다 (지금 값을 넣어도 실제로 접근 가능한 URL이 아님).
+`/health/ready`는 DB 연결을 확인하므로 업로드 설정 누락까지 검출하지 않습니다. Terraform 태스크 정의는 `S3_BUCKET`에 생성한 미디어 버킷 이름을 지정합니다. `S3_PUBLIC_BASE_URL`은 미디어 읽기용 CloudFront 배포/OAC가 구성된 뒤 접근 가능한 URL로 설정합니다.
 
 ## Terraform
 
