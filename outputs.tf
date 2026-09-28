@@ -18,10 +18,6 @@ output "cloudfront_domain_name" {
   value = aws_cloudfront_distribution.app.domain_name
 }
 
-output "media_bucket_name" {
-  value = aws_s3_bucket.media.bucket
-}
-
 output "frontend_bucket_name" {
   value = aws_s3_bucket.frontend.bucket
 }

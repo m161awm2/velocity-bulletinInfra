@@ -39,10 +39,6 @@ resource "aws_ecs_task_definition" "backend" {
       portMappings = [
         { containerPort = var.container_port, protocol = "tcp" }
       ]
-      # S3_BUCKET enables uploads; the application checks that it is non-empty.
-      environment = [
-        { name = "S3_BUCKET", value = aws_s3_bucket.media.bucket }
-      ]
       secrets = [
         {
           name      = "DATABASE_URL"
