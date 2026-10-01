@@ -94,7 +94,32 @@ resource "aws_lb_listener" "public_http" {
   protocol          = "HTTP"
 
   default_action {
+    type = "fixed-response"
+
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Access denied"
+      status_code  = "403"
+    }
+  }
+
+  # Add the verification header at CloudFront before requiring it at the ALB.
+  depends_on = [aws_cloudfront_distribution.app]
+}
+
+resource "aws_lb_listener_rule" "cloudfront_only" {
+  listener_arn = aws_lb_listener.public_http.arn
+  priority     = 100
+
+  action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.backend.arn
+  }
+
+  condition {
+    http_header {
+      http_header_name = "X-Origin-Verify"
+      values           = [random_password.cloudfront_origin_header.result]
+    }
   }
 }

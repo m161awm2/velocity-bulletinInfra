@@ -5,7 +5,7 @@
 ## 구성
 
 - CloudFront가 기본 경로를 비공개 프론트엔드 S3로, `/api/*`를 ALB로 전달합니다. API 캐시는 끕니다.
-- 퍼블릭 ALB는 CloudFront origin-facing 주소에서만 접근할 수 있고, ECS Fargate 태스크는 프라이빗 서브넷에서 퍼블릭 IP 없이 실행합니다.
+- 퍼블릭 ALB는 CloudFront origin-facing 주소와 배포별 검증 헤더를 모두 확인하고, ECS Fargate 태스크는 프라이빗 서브넷에서 퍼블릭 IP 없이 실행합니다.
 - 두 AZ의 프라이빗 서브넷은 NAT Gateway 하나와 공용 라우팅 테이블을 사용합니다.
 - DB 연결 정보는 Secrets Manager에서 주입합니다. 애플리케이션 태스크 역할에는 별도 AWS 권한을 주지 않습니다.
 - WAF는 별도 비용 때문에 포함하지 않았습니다.

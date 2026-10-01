@@ -19,6 +19,11 @@ data "aws_cloudfront_origin_request_policy" "api" {
   name = "Managed-AllViewer"
 }
 
+resource "random_password" "cloudfront_origin_header" {
+  length  = 32
+  special = false
+}
+
 resource "aws_cloudfront_distribution" "app" {
   enabled             = true
   default_root_object = "index.html"
@@ -35,6 +40,12 @@ resource "aws_cloudfront_distribution" "app" {
   origin {
     origin_id   = "public-alb"
     domain_name = aws_lb.public.dns_name
+
+    custom_header {
+      name  = "X-Origin-Verify"
+      value = random_password.cloudfront_origin_header.result
+    }
+
     custom_origin_config {
       http_port              = 80
       https_port             = 443
