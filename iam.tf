@@ -33,7 +33,6 @@ data "aws_iam_policy_document" "task_execution_secrets" {
     actions = ["secretsmanager:GetSecretValue"]
     resources = [
       aws_secretsmanager_secret.app.arn,
-      aws_secretsmanager_secret.migration.arn,
     ]
   }
 }

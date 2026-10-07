@@ -76,9 +76,3 @@ variable "database_url" {
   type        = string
   sensitive   = true
 }
-
-variable "migration_database_url" {
-  description = "Neon *unpooled* (direct) Postgres connection string, used only by the one-off migration task."
-  type        = string
-  sensitive   = true
-}

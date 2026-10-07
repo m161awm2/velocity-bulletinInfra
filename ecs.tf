@@ -92,8 +92,8 @@ resource "aws_ecs_task_definition" "migrate" {
       essential = true
       secrets = [
         {
-          name      = "MIGRATION_DATABASE_URL"
-          valueFrom = "${aws_secretsmanager_secret.migration.arn}:MIGRATION_DATABASE_URL::"
+          name      = "DATABASE_URL"
+          valueFrom = "${aws_secretsmanager_secret.app.arn}:DATABASE_URL::"
         }
       ]
       logConfiguration = {

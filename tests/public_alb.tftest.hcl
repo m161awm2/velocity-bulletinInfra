@@ -45,13 +45,17 @@ mock_provider "random" {
 }
 
 variables {
-  database_url           = "postgresql://test:test@db-pooler.example.invalid/app?sslmode=require"
-  migration_database_url = "postgresql://test:test@db.example.invalid/app?sslmode=require"
-  backend_image          = "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/backend:test"
+  database_url  = "postgresql://test:test@db-pooler.example.invalid/app?sslmode=require"
+  backend_image = "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/backend:test"
 }
 
 run "public_alb_private_tasks" {
   command = apply
+
+  assert {
+    condition     = one(jsondecode(aws_ecs_task_definition.migrate.container_definitions)[0].secrets).valueFrom == "${aws_secretsmanager_secret.app.arn}:DATABASE_URL::"
+    error_message = "The migration task must use the same pooled database URL secret as the backend."
+  }
 
   assert {
     condition     = length(aws_nat_gateway.main) == 1 && aws_nat_gateway.main[0].subnet_id == aws_subnet.public[0].id

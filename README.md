@@ -14,7 +14,7 @@
 
 ## 실행
 
-먼저 `example.tfvars`를 `terraform.tfvars`로 복사해 `database_url`, `migration_database_url`, `backend_image`를 채운 뒤 실행합니다. 실제 DB 자격 증명은 저장소에 커밋하지 않습니다.
+먼저 `example.tfvars`를 `terraform.tfvars`로 복사해 `database_url`, `backend_image`를 채운 뒤 실행합니다. `database_url`에는 Neon pooled URL을 사용하며, 웹서비스와 마이그레이션 태스크가 같은 주소를 사용합니다. 실제 DB 자격 증명은 저장소에 커밋하지 않습니다.
 
 ```sh
 cp example.tfvars terraform.tfvars
