@@ -25,7 +25,3 @@ output "frontend_bucket_name" {
 output "app_secret_arn" {
   value = aws_secretsmanager_secret.app.arn
 }
-
-output "migration_secret_arn" {
-  value = aws_secretsmanager_secret.migration.arn
-}
